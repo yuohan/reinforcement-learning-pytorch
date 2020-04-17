@@ -4,6 +4,7 @@ import copy
 import random
 from collections import namedtuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -62,24 +63,61 @@ class DQN():
     """
     DQN (Deep Q Network) Agent Class
     """
-    def __init__(self, device, obs_dim, num_actions, hidden_units, lr, gamma=0.99):
+    def __init__(self, obs_shape, num_actions, lr=1e-3, gamma=0.99, device='cuda', model='atari'):
 
-        self.device = device
+        # define q network
+        if model == 'atari':
 
-        self.q_net = nn.Sequential(
-            nn.Linear(obs_dim, hidden_units),
+            # channel first
+            input_channel, height, width = obs_shape
+
+            kernel_size = [8, 4, 3]
+            stride = [4, 2, 1]
+            channels = [32, 64, 64]
+
+            def conv2d_output_size(input_size, kernel_size, stride):
+                return (input_size - (kernel_size - 1) - 1) // stride  + 1
+            
+            for k, s in zip(kernel_size, stride):
+                height = conv2d_output_size(height, k, s)
+                width = conv2d_output_size(width, k, s)
+
+            linear_input_size = channels[2] * height * width
+            linear_units = 512
+
+            model = nn.Sequential(
+                nn.Conv2d(input_channel, channels[0], kernel_size[0], stride[0]),
+                nn.BatchNorm2d(channels[0]),
+                nn.ReLU(),
+                nn.Conv2d(channels[0], channels[1], kernel_size[1], stride[1]),
+                nn.BatchNorm2d(channels[1]),
+                nn.ReLU(),
+                nn.Conv2d(channels[1], channels[2], kernel_size[2], stride[2]),
+                nn.BatchNorm2d(channels[2]),
+                nn.ReLU(),
+                nn.Flatten(),
+                nn.Linear(linear_input_size, linear_units),
+                nn.ReLU(),
+                nn.Linear(linear_units, num_actions)
+            )
+        else:
+
+            linear_units = 128
+
+            model = nn.Sequential(
+            nn.Linear(np.prod(obs_shape), linear_units),
             nn.ReLU(),
-            nn.Linear(hidden_units, hidden_units),
+            nn.Linear(linear_units, linear_units),
             nn.ReLU(),
-            nn.Linear(hidden_units, num_actions)
+            nn.Linear(linear_units, num_actions)
         )
 
-        self.target_net = copy.deepcopy(self.q_net)
-
+        self.gamma = gamma
+        self.device = device
+        self.q_net = model.to(device)
+        self.target_net = copy.deepcopy(self.q_net).to(device)
         self.criterion = nn.MSELoss(reduction='mean')
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
-
-        self.gamma = gamma
 
     def train(self, transitions):
 
@@ -104,12 +142,12 @@ class DQN():
 
     def get_q(self, obs):
         with torch.no_grad():
-            return self.q_net(obs)
+            return self.q_net(obs.to(self.device))
 
     def update_target(self):
 
         for param, param_target in zip(self.q_net.parameters(), self.target_net.parameters()):
-                param_target.data.copy_(param.data)
+            param_target.data.copy_(param.data)
 
 def main():
 
@@ -123,7 +161,6 @@ def main():
 
     batch_size = 128
     memory_size = 500
-    hidden_units = 128
 
     train_timesteps = 15000
     train_start_time = 128
@@ -134,12 +171,12 @@ def main():
     env = gym.make('CartPole-v0')
     env.seed(seed)
 
-    obs_dim = env.observation_space.shape[0]
+    obs_shape = env.observation_space.shape
     num_actions = env.action_space.n
 
     memory = ReplayBuffer(memory_size)
 
-    agent = DQN(device, obs_dim, num_actions, hidden_units, lr, gamma)
+    agent = DQN(obs_shape, num_actions, lr, gamma, device, 'simple')
     policy = EpsilonGreedy(agent, num_actions, init_epsilon, final_epsilon, epsilon_decay)
 
     # populate replay memory
