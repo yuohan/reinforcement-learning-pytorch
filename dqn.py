@@ -10,6 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from atari_wrapper import make_atari, wrap_deepmind, wrap_pytorch
+
 Transition = namedtuple('Transition', 
     ('obs', 'action', 'reward', 'next_obs', 'done'))
 
@@ -152,31 +154,35 @@ class DQN():
 def main():
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    lr = 1e-3
+    lr = 1e-4
     gamma = 0.99
     init_epsilon = 1
     final_epsilon = 0.01
-    epsilon_decay = 200
+    epsilon_decay = 30000
     seed = 123
 
-    batch_size = 128
-    memory_size = 500
+    batch_size = 32
+    memory_size = 100000
 
-    train_timesteps = 15000
-    train_start_time = 128
-    target_update_frequency = 100
+    train_timesteps = 1000000
+    train_start_time = 10000
+    target_update_frequency = 10000
 
-    log_timesteps = 200
+    log_timesteps = 20000
 
-    env = gym.make('CartPole-v0')
-    env.seed(seed)
+    #env = gym.make('CartPole-v0')
+    #env.seed(seed)
+    env_id = 'PongNoFrameskip-v4'
+    env    = make_atari(env_id)
+    env    = wrap_deepmind(env)
+    env    = wrap_pytorch(env)
 
     obs_shape = env.observation_space.shape
     num_actions = env.action_space.n
 
     memory = ReplayBuffer(memory_size)
 
-    agent = DQN(obs_shape, num_actions, lr, gamma, device, 'simple')
+    agent = DQN(obs_shape, num_actions, lr, gamma, device, 'atari')
     policy = EpsilonGreedy(agent, num_actions, init_epsilon, final_epsilon, epsilon_decay)
 
     # populate replay memory
@@ -218,7 +224,7 @@ def main():
         episode_reward += reward
 
         if t % log_timesteps == 0:
-            print(f't: {t:5}, reward: {sum(reward_list[-10:])/10:5}')
+            print(f'\rt: {t:5}, reward: {sum(reward_list[-10:])/10:5}')
 
         # update target network at every C timesteps
         if t % target_update_frequency == 0:
