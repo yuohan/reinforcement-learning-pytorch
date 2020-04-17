@@ -151,6 +151,17 @@ class DQN():
         for param, param_target in zip(self.q_net.parameters(), self.target_net.parameters()):
             param_target.data.copy_(param.data)
 
+    def save(self, path, info=None):
+
+        state = {
+            'state_dict': self.q_net.state_dict(),
+            'target_state_dict': self.target_net.state_dict(),
+            'optimizer' : self.optimizer.state_dict()
+        }
+        if info != None:
+            state = {**info, **state}
+        torch.save(state, path)
+
 def main():
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -168,7 +179,8 @@ def main():
     train_start_time = 10000
     target_update_frequency = 10000
 
-    log_timesteps = 20000
+    MODEL_PATH = 'models/dqn_pong_checkpoint.pth.tar'
+    LOG_PATH = 'dqn_pong_log.txt'
 
     #env = gym.make('CartPole-v0')
     #env.seed(seed)
@@ -201,6 +213,8 @@ def main():
             obs = env.reset()
 
     # for monitoring
+    ep_num = 1
+    ep_start_time = 1
     episode_reward = 0
     reward_list = []
 
@@ -223,9 +237,6 @@ def main():
         # record reward
         episode_reward += reward
 
-        if t % log_timesteps == 0:
-            print(f'\rt: {t:5}, reward: {sum(reward_list[-10:])/10:5}')
-
         # update target network at every C timesteps
         if t % target_update_frequency == 0:
             agent.update_target()
@@ -234,6 +245,19 @@ def main():
             # start a new episode
             obs = env.reset()
 
+            # write log
+            with open(LOG_PATH, 'a') as f:
+                f.write(f'{ep_num}\t{episode_reward}\t{ep_start_time}\t{t}\n')
+
+            # save model
+            info = {
+                'epoch': ep_num,
+                'timesteps': t,
+            }
+            agent.save(MODEL_PATH, info)
+
+            ep_num += 1
+            ep_start_time = t+1
             reward_list.append(episode_reward)
             episode_reward = 0
 
