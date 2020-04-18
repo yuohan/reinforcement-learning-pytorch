@@ -1,7 +1,10 @@
 import gym
 import math
 import copy
+import tqdm
+import yaml
 import random
+import argparse
 from collections import namedtuple
 
 import numpy as np
@@ -65,10 +68,10 @@ class DQN():
     """
     DQN (Deep Q Network) Agent Class
     """
-    def __init__(self, obs_shape, num_actions, lr=1e-3, gamma=0.99, device='cuda', model='atari'):
+    def __init__(self, obs_shape, num_actions, lr=1e-3, gamma=0.99, device='cuda', model='conv'):
 
         # define q network
-        if model == 'atari':
+        if model == 'conv':
 
             # channel first
             input_channel, height, width = obs_shape
@@ -162,39 +165,36 @@ class DQN():
             state = {**info, **state}
         torch.save(state, path)
 
-def main():
+def get_env_type(env_id):
+    return gym.envs.registry.env_specs[env_id].entry_point.split(':')[0].split('.')[-1]
+
+def train(env_id, lr=1e-4, gamma=0.99,
+         memory_size=10000, batch_size=32,
+         train_timesteps=1000000, train_start_time=10000, target_update_frequency=10000,
+         init_epsilon=1, final_epsilon=0.01, epsilon_decay=30000,
+         model_path=None):
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    lr = 1e-4
-    gamma = 0.99
-    init_epsilon = 1
-    final_epsilon = 0.01
-    epsilon_decay = 30000
-    seed = 123
 
-    batch_size = 32
-    memory_size = 100000
+    LOG_PATH = f'logs/dqn_log_{env_id}.txt'
 
-    train_timesteps = 1000000
-    train_start_time = 10000
-    target_update_frequency = 10000
+    if get_env_type(env_id) == 'atari':
+        env    = make_atari(env_id)
+        env    = wrap_deepmind(env)
+        env    = wrap_pytorch(env)
 
-    MODEL_PATH = 'models/dqn_pong_checkpoint.pth.tar'
-    LOG_PATH = 'dqn_pong_log.txt'
+        model_type = 'conv'
+    else:
+        env = gym.make(env_id)
 
-    #env = gym.make('CartPole-v0')
-    #env.seed(seed)
-    env_id = 'PongNoFrameskip-v4'
-    env    = make_atari(env_id)
-    env    = wrap_deepmind(env)
-    env    = wrap_pytorch(env)
+        model_type = 'linear'
 
     obs_shape = env.observation_space.shape
     num_actions = env.action_space.n
 
     memory = ReplayBuffer(memory_size)
 
-    agent = DQN(obs_shape, num_actions, lr, gamma, device, 'atari')
+    agent = DQN(obs_shape, num_actions, lr, gamma, device, model_type)
     policy = EpsilonGreedy(agent, num_actions, init_epsilon, final_epsilon, epsilon_decay)
 
     # populate replay memory
@@ -220,7 +220,7 @@ def main():
 
     # train start
     obs = env.reset()
-    for t in range(1, train_timesteps+1):
+    for t in tqdm.tqdm(range(1, train_timesteps+1)):
 
         # choose action
         action = policy.act(obs, t)
@@ -249,12 +249,13 @@ def main():
             with open(LOG_PATH, 'a') as f:
                 f.write(f'{ep_num}\t{episode_reward}\t{ep_start_time}\t{t}\n')
 
-            # save model
-            info = {
-                'epoch': ep_num,
-                'timesteps': t,
-            }
-            agent.save(MODEL_PATH, info)
+            if model_path is not None:
+                # save model
+                info = {
+                    'epoch': ep_num,
+                    'timesteps': t,
+                }
+                agent.save(model_path, info)
 
             ep_num += 1
             ep_start_time = t+1
@@ -262,4 +263,24 @@ def main():
             episode_reward = 0
 
 if __name__ == '__main__':
-    main()
+    
+    parser = argparse.ArgumentParser(description='Process some integers.')
+
+    parser.add_argument('env', type=str,
+                    help='Open AI gym env ID')
+    parser.add_argument('--config',
+                    help='path of configure yaml file')
+
+    args = parser.parse_args()
+    
+    env_id = args.env
+    config = args.config
+
+    if config is not None:
+        stream = open(args.config, 'r')
+        kwargs = yaml.load(stream)
+        stream.close()
+    else:
+        kwargs = {}
+
+    train(env_id, **kwargs)

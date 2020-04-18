@@ -1,0 +1,11 @@
+lr: 0.001
+gamma: 0.99
+init_epsilon: 1
+final_epsilon: 0.01
+epsilon_decay: 200
+memory_size: 500
+batch_size: 128
+train_timesteps: 15000
+train_start_time: 128
+target_update_frequency: 100
+model_path: models/cartpole_checkpoint.pth.tar

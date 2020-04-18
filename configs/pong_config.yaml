@@ -1,0 +1,11 @@
+lr: 0.0001
+gamma: 0.99
+init_epsilon: 1
+final_epsilon: 0.01
+epsilon_decay: 30000
+memory_size: 100000
+batch_size: 32
+train_timesteps: 1000000
+train_start_time: 10000
+target_update_frequency: 10000
+model_path: models/pong_checkpoint.pth.tar
